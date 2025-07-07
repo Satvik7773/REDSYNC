@@ -53,6 +53,34 @@ function toRESP(data) {
 
   throw new Error('Unsupported data type');
 }
+/**
+ * Parse exactly one full RESP array from buf.
+ * Returns { commandArray, bytesConsumed } or null if incomplete.
+ */
+function tryParseOneRESP(buf) {
+  if (buf.length < 4 || buf[0] !== 42 /* '*' */) return null;
+  const headerEnd = buf.indexOf('\r\n');
+  if (headerEnd < 0) return null;
+
+  const count = parseInt(buf.slice(1, headerEnd).toString(), 10);
+  let pos = headerEnd + 2;
+  const out = [];
+
+  for (let i = 0; i < count; i++) {
+    if (pos >= buf.length || buf[pos] !== 36 /* '$' */) return null;
+    const lenEnd = buf.indexOf('\r\n', pos);
+    if (lenEnd < 0) return null;
+
+    const strLen = parseInt(buf.slice(pos + 1, lenEnd).toString(), 10);
+    pos = lenEnd + 2;
+    if (pos + strLen + 2 > buf.length) return null;
+
+    out.push(buf.slice(pos, pos + strLen).toString());
+    pos += strLen + 2;
+  }
+
+  return { commandArray: out, bytesConsumed: pos };
+}
 
 var repliId = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
 var offset = 0;
@@ -438,146 +466,456 @@ function sendData(conn, inp) {
   return "-ERR unknown command";
 }
 
-const server = net.createServer(function (conn) 
-{
+// const server = net.createServer(function (conn) 
+// {
 
-  let queue= [];
-  conn.on("data", function (inp) {
-    var input = inp.toString();
-    var cont = input.split("\r\n");
+//   let queue= [];
+//   conn.on("data", function (inp) {
+//     var input = inp.toString();
+//     var cont = input.split("\r\n");
 
-    if (cont.length < 2) {
-      cont = input.toUpperCase();
-      if (cont == "PING") {
-        conn.write("+PONG\r\n");
+//     if (cont.length < 2) {
+//       cont = input.toUpperCase();
+//       if (cont == "PING") {
+//         conn.write("+PONG\r\n");
+//       }
+//       return;
+//     }
+
+//     var cmd;
+//     if (cont[0][0] === '*') {
+//       cmd = cont[2].toUpperCase();
+//     } else if (cont[0][0] === '$') {
+//       cmd = cont[1].toUpperCase();
+//     }
+
+//     if(queue.length > 0 && cmd !== "EXEC" && cmd !== "MULTI" && cmd != "DISCARD")
+//     {//d
+//         queue.push(input);
+//        conn.write("+QUEUED\r\n");
+//     }
+
+//     else if (cmd === "EXEC") 
+//       {
+//       if (queue.length === 0) {
+//           conn.write("-ERR EXEC without MULTI\r\n");
+//       } 
+//      else if(queue.length === 1) 
+//         {
+//         conn.write("*0\r\n");
+//         queue.shift();
+//     }
+//     else
+//     {
+//       const responses = [];
+//       while (queue.length > 0) {
+//         const queuedCommand = queue.shift();
+//         if(queuedCommand != "chalu")
+//         {
+//         const response = sendData(conn, queuedCommand); 
+//         responses.push(response);
+//         }
+//       }
+//       let respArray = `*${responses.length}\r\n`;
+//       for (const response of responses) {
+//         if (response.startsWith("+") || response.startsWith("-") || response.startsWith(":")) {
+//           respArray += `${response}\r\n`;
+//         } else {
+//           const lines = response.split("\r\n");
+//           respArray += `${lines[0]}\r\n${lines[1]}\r\n`;
+//         }
+//       }
+//       mutlicheck = false;
+//       conn.write(respArray);
+//     }
+//   } 
+//     else if (cmd === "MULTI") 
+//       {
+//         mutlicheck=true;
+//       if (queue.length ===0) {
+//           queue.push("chalu"); 
+//           conn.write("+OK\r\n");
+//       } else {
+//           conn.write("-ERR MULTI already in progress\r\n");
+//       }
+//     }
+//     else if(cmd === "DISCARD")
+//     {
+//       if(queue.length > 2)
+//       {
+//          queue=[];
+//          conn.write("+OK\r\n");
+//       }
+//       else
+//       {
+//         conn.write("-ERR DISCARD without MULTI\r\n");
+//       }
+//     }
+    
+//   else  if (cmd === "ECHO") {
+//       var s = cont[4];
+//       var size = s.length;
+//       conn.write("$" + size + "\r\n" + s + "\r\n");
+//     } else if (cmd === "PING") {
+//       conn.write("+PONG\r\n");
+//     }
+//     else if (cmd === "SET") {
+//       var key = cont[4];
+//       var value = cont[6];
+//       var ttl = null;
+
+//       if (cont[8] !== undefined) {
+//         var expType = cont[8].toUpperCase();
+//         if (expType === "EX" || expType === "PX") {
+//           ttl = parseInt(cont[10]);
+//           if (expType === "EX") {
+//             ttl *= 1000;
+//           }
+//           const expireTime = Date.now() + ttl;
+//           hashmap.set(key, { value: value, expireTime: expireTime });
+//           remove(key, BigInt(expireTime));//g
+//         }
+//       } else {
+//         hashmap.set(key, { value: value, expireTime: null });
+//       }
+          
+//       conn.write("+OK\r\n");
+//       propagte(input);
+//     } 
+//     else if (cmd === "GET") {
+//       var key = cont[4];
+//       if (hashmap.has(key)) {
+//         var entry = hashmap.get(key);
+//         if (entry.expireTime === null || entry.expireTime > Date.now()) {
+//           var value = entry.value;
+//           var size = value.length;
+//           conn.write("$" + size + "\r\n" + value + "\r\n");
+//         } else {
+//           hashmap.delete(key);
+//           conn.write("$-1\r\n");
+//         }
+//       } else {
+//         conn.write("$-1\r\n");
+//       }
+//     } 
+//     else if (cmd === "CONFIG" && cont[4].toUpperCase() == "GET") {
+//       var key = cont[6];
+//       var ans = hashmap.get(key);
+//       if (ans) {
+//         conn.write("*2\r\n" + "$" + key.length + "\r\n" + key + "\r\n$" + ans.length + "\r\n" + ans + "\r\n");
+//       }
+//     } else if (cmd === "KEYS") {
+//       const pattern = cont[4];
+//       if (pattern === "*") {
+//         const matchingKeys = [];
+//         for (let key of hashmap.keys()) {
+//           if (key !== "dir" && key !== "dbfilename" && key !== "") {
+//             const entry = hashmap.get(key);
+//             if (entry.expireTime === null || entry.expireTime > Date.now()) {
+//               matchingKeys.push(key);
+//             }
+//           }
+//         }
+
+//         conn.write(`*${matchingKeys.length}\r\n`);
+//         for (let key of matchingKeys) {
+//           conn.write(`$${key.length}\r\n${key}\r\n`);
+//         }
+//       } else {
+//         conn.write("*0\r\n");
+//       }
+//     }
+//     else if (cmd === "INFO" && cont[4].toUpperCase() === "REPLICATION") {
+//       if (hashinfo.get('role') === 'master') {
+//         // Construct the response string
+//         const response = [
+//           "role:master",
+//           "master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
+//           "master_repl_offset:0"
+//         ].join("\n");
+
+//         conn.write(`$${response.length}\r\n${response}\r\n`);
+//       } else {
+//         conn.write("$10\r\nrole:slave\r\n");
+//       }
+//     }//d
+//     else if (cmd === "REPLCONF" && (cont[4] === "listening-port"|| cont[4] === "capa") )
+//       {
+//         console.log("yahan se");
+//       conn.write("+OK\r\n");
+//     }
+
+//     else if (cmd === "PSYNC") {
+//       conn.write("+FULLRESYNC " + repliId + " " + offset + "\r\n");
+//       conn.write(Buffer.concat([rdbHead, rdbBuffer]));
+//       replicas.push(conn);
+//     }
+
+//     else if (cmd === "WAIT") {
+//       console.log(length_of_propagated_commands);
+//       const num = parseInt(cont[4]);
+//       const timeout = parseInt(cont[6]);
+//       const startTime = Date.now();
+//       let countOfReplicas = 0;
+//         if(length_of_propagated_commands==0){
+//           conn.write(":"+replicas.length+"\r\n");
+//         }
+//         else
+//         {
+//       const acknowledgedReplicas = new Set();
+  
+//       const checkTimeout = () => {
+//           const elapsed = Date.now() - startTime;
+//           if (countOfReplicas >= num || elapsed >= timeout) {
+//                 length_of_propagated_commands+="*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".length;
+//               conn.write(`:${countOfReplicas}\r\n`);
+//           } else {
+//               setTimeout(checkTimeout, 10); // Check again after 10ms
+//           }
+//       };
+  
+//       for (const replica of replicas) {
+//           replica.write("*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n");
+  
+//           replica.on('data', (data) => {
+//               const inp1 = data.toString();
+//               const cont1 = inp1.split("\r\n");
+//               const num1 = parseInt(cont1[6]);
+//               console.log("replica sent ",num1,"propagated_commands jo hamne bheja ",length_of_propagated_commands);
+  
+//               if (num1 === length_of_propagated_commands) {
+//                 console.log("entered");
+//                   if (!acknowledgedReplicas.has(replica)) {
+//                       acknowledgedReplicas.add(replica);
+//                       countOfReplicas++;
+//                   }
+//               }
+//           });
+//       }
+  
+//       checkTimeout();
+//     }
+//   }
+
+//   else if(cmd==="TYPE")
+//   {
+//     var key=cont[4];
+//     console.log(streammap.size);
+//     console.log("All keys in streammap:", [...streammap.keys()], "Key:", key);
+
+//     if(hashmap.has(key))
+//     {
+//       conn.write("+"+typeof(hashmap.get(key).value)+"\r\n");
+//     }
+//     else if(streammap.has(key))
+//     {
+//       conn.write("+stream\r\n");
+//     }
+//     else
+//     {
+//       conn.write("+none\r\n");
+//     }
+//   }
+
+//   else if (cmd === "XADD") 
+//     {
+//      handleXADD(cont, conn);
+// }
+
+// else if (cmd === "XRANGE") 
+//   {
+//     handleXRANGE(cont, conn);
+//   }
+//   else if(cmd === "XREAD")
+//   {
+//      if(cont[4].toLocaleUpperCase() ==="BLOCK")
+//      {
+//        handleXREADBLOCK(cont, conn);
+//      }
+//      else
+//      {
+//        handleXREAD(cont, conn);
+//      }
+//   }
+//   else if(cmd === "INCR")
+//   {
+//     var key=cont[4];
+//     if(hashmap.has(key))
+//     {//d
+//       let val=hashmap.get(key).value;
+//       if(isNaN(val))
+//       {
+//         conn.write("-ERR value is not an integer or out of range\r\n");
+//       }
+//       val=parseInt(val)+1;
+
+//       hashmap.set(key,{value:(""+val),expireTime:hashmap.get(key).expireTime});
+//       conn.write(":"+val+"\r\n");
+//     }
+//     else
+//     {
+//       hashmap.set(key,{value:"1",expireTime:null});
+//       conn.write(":"+1+"\r\n");
+//   }
+// }
+
+
+
+  
+
+//     });
+//   conn.on("end", function () {
+//     console.log("Client disconnected");
+//   });
+  
+// });
+const server = net.createServer(function (conn) {
+  let queue = [];
+  let buffer = Buffer.alloc(0); // Add buffer to accumulate data
+
+  conn.on("data", function (data) {
+    // Accumulate data in buffer
+    buffer = Buffer.concat([buffer, data]);
+    
+    // Process all complete commands in the buffer
+    while (buffer.length > 0) {
+      const result = tryParseOneRESP(buffer);
+      if (!result) {
+        // Not enough data for a complete command, wait for more
+        break;
       }
+      
+      const { commandArray, bytesConsumed } = result;
+      buffer = buffer.slice(bytesConsumed);
+      
+      // Process the command
+      processCommand(commandArray, conn, queue);
+    }
+  });
+
+  conn.on("end", function () {
+    console.log("Client disconnected");
+  });
+
+  // Move command processing logic to separate function
+  function processCommand(commandArray, conn, queue) {
+    if (!commandArray || commandArray.length === 0) return;
+    
+    const cmd = commandArray[0].toUpperCase();
+    
+    // Handle transaction commands
+    if (queue.length > 0 && cmd !== "EXEC" && cmd !== "MULTI" && cmd !== "DISCARD") {
+      queue.push(commandArray);
+      conn.write("+QUEUED\r\n");
       return;
     }
 
-    var cmd;
-    if (cont[0][0] === '*') {
-      cmd = cont[2].toUpperCase();
-    } else if (cont[0][0] === '$') {
-      cmd = cont[1].toUpperCase();
-    }
-
-    if(queue.length > 0 && cmd !== "EXEC" && cmd !== "MULTI" && cmd != "DISCARD")
-    {//d
-        queue.push(input);
-       conn.write("+QUEUED\r\n");
-    }
-
-    else if (cmd === "EXEC") 
-      {
+    if (cmd === "EXEC") {
       if (queue.length === 0) {
-          conn.write("-ERR EXEC without MULTI\r\n");
-      } 
-     else if(queue.length === 1) 
-        {
+        conn.write("-ERR EXEC without MULTI\r\n");
+      } else if (queue.length === 1) {
         conn.write("*0\r\n");
         queue.shift();
-    }
-    else
-    {
-      const responses = [];
-      while (queue.length > 0) {
-        const queuedCommand = queue.shift();
-        if(queuedCommand != "chalu")
-        {
-        const response = sendData(conn, queuedCommand); 
-        responses.push(response);
-        }
-      }
-      let respArray = `*${responses.length}\r\n`;
-      for (const response of responses) {
-        if (response.startsWith("+") || response.startsWith("-") || response.startsWith(":")) {
-          respArray += `${response}\r\n`;
-        } else {
-          const lines = response.split("\r\n");
-          respArray += `${lines[0]}\r\n${lines[1]}\r\n`;
-        }
-      }
-      mutlicheck = false;
-      conn.write(respArray);
-    }
-  } 
-    else if (cmd === "MULTI") 
-      {
-        mutlicheck=true;
-      if (queue.length ===0) {
-          queue.push("chalu"); 
-          conn.write("+OK\r\n");
       } else {
-          conn.write("-ERR MULTI already in progress\r\n");
+        const responses = [];
+        while (queue.length > 0) {
+          const queuedCommand = queue.shift();
+          if (queuedCommand !== "chalu") {
+            const response = executeCommand(queuedCommand, conn);
+            responses.push(response);
+          }
+        }
+        let respArray = `*${responses.length}\r\n`;
+        for (const response of responses) {
+          if (response.startsWith("+") || response.startsWith("-") || response.startsWith(":")) {
+            respArray += `${response}\r\n`;
+          } else {
+            const lines = response.split("\r\n");
+            respArray += `${lines[0]}\r\n${lines[1]}\r\n`;
+          }
+        }
+        mutlicheck = false;
+        conn.write(respArray);
       }
-    }
-    else if(cmd === "DISCARD")
-    {
-      if(queue.length > 2)
-      {
-         queue=[];
-         conn.write("+OK\r\n");
+    } else if (cmd === "MULTI") {
+      mutlicheck = true;
+      if (queue.length === 0) {
+        queue.push("chalu");
+        conn.write("+OK\r\n");
+      } else {
+        conn.write("-ERR MULTI already in progress\r\n");
       }
-      else
-      {
+    } else if (cmd === "DISCARD") {
+      if (queue.length > 0) {
+        queue = [];
+        conn.write("+OK\r\n");
+      } else {
         conn.write("-ERR DISCARD without MULTI\r\n");
       }
+    } else {
+      // Execute regular command
+      const response = executeCommand(commandArray, conn);
+      if (response) {
+        conn.write(response + "\r\n");
+      }
     }
-    
-  else  if (cmd === "ECHO") {
-      var s = cont[4];
-      var size = s.length;
-      conn.write("$" + size + "\r\n" + s + "\r\n");
-    } else if (cmd === "PING") {
-      conn.write("+PONG\r\n");
-    }
-    else if (cmd === "SET") {
-      var key = cont[4];
-      var value = cont[6];
-      var ttl = null;
+  }
 
-      if (cont[8] !== undefined) {
-        var expType = cont[8].toUpperCase();
+  // Extract command execution logic
+  function executeCommand(commandArray, conn) {
+    const cmd = commandArray[0].toUpperCase();
+    
+    if (cmd === "ECHO") {
+      const s = commandArray[1];
+      return `$${s.length}\r\n${s}`;
+    } else if (cmd === "PING") {
+      return "+PONG";
+    } else if (cmd === "SET") {
+      const key = commandArray[1];
+      const value = commandArray[2];
+      let ttl = null;
+
+      if (commandArray.length > 3) {
+        const expType = commandArray[3].toUpperCase();
         if (expType === "EX" || expType === "PX") {
-          ttl = parseInt(cont[10]);
+          ttl = parseInt(commandArray[4]);
           if (expType === "EX") {
             ttl *= 1000;
           }
           const expireTime = Date.now() + ttl;
           hashmap.set(key, { value: value, expireTime: expireTime });
-          remove(key, BigInt(expireTime));//g
+          remove(key, BigInt(expireTime));
         }
       } else {
         hashmap.set(key, { value: value, expireTime: null });
       }
-          
-      conn.write("+OK\r\n");
-      propagte(input);
-    } 
-    else if (cmd === "GET") {
-      var key = cont[4];
+      
+      // Convert commandArray back to RESP format for propagation
+      const respCommand = toRESP(commandArray);
+      propagte(respCommand);
+      return "+OK";
+    } else if (cmd === "GET") {
+      const key = commandArray[1];
       if (hashmap.has(key)) {
-        var entry = hashmap.get(key);
+        const entry = hashmap.get(key);
         if (entry.expireTime === null || entry.expireTime > Date.now()) {
-          var value = entry.value;
-          var size = value.length;
-          conn.write("$" + size + "\r\n" + value + "\r\n");
+          return `$${entry.value.length}\r\n${entry.value}`;
         } else {
           hashmap.delete(key);
-          conn.write("$-1\r\n");
+          return "$-1";
         }
       } else {
-        conn.write("$-1\r\n");
+        return "$-1";
       }
-    } 
-    else if (cmd === "CONFIG" && cont[4].toUpperCase() == "GET") {
-      var key = cont[6];
-      var ans = hashmap.get(key);
+    } else if (cmd === "CONFIG" && commandArray[1] && commandArray[1].toUpperCase() === "GET") {
+      const key = commandArray[2];
+      const ans = hashmap.get(key);
       if (ans) {
-        conn.write("*2\r\n" + "$" + key.length + "\r\n" + key + "\r\n$" + ans.length + "\r\n" + ans + "\r\n");
+        return `*2\r\n$${key.length}\r\n${key}\r\n$${ans.length}\r\n${ans}`;
       }
+      return "*0\r\n";
     } else if (cmd === "KEYS") {
-      const pattern = cont[4];
+      const pattern = commandArray[1];
       if (pattern === "*") {
         const matchingKeys = [];
         for (let key of hashmap.keys()) {
@@ -589,158 +927,129 @@ const server = net.createServer(function (conn)
           }
         }
 
-        conn.write(`*${matchingKeys.length}\r\n`);
+        let response = `*${matchingKeys.length}\r\n`;
         for (let key of matchingKeys) {
-          conn.write(`$${key.length}\r\n${key}\r\n`);
+          response += `$${key.length}\r\n${key}\r\n`;
         }
+        return response.slice(0, -2); // Remove last \r\n
       } else {
-        conn.write("*0\r\n");
+        return "*0";
       }
-    }
-    else if (cmd === "INFO" && cont[4].toUpperCase() === "REPLICATION") {
+    } else if (cmd === "INFO" && commandArray[1] && commandArray[1].toUpperCase() === "REPLICATION") {
       if (hashinfo.get('role') === 'master') {
-        // Construct the response string
         const response = [
           "role:master",
           "master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
           "master_repl_offset:0"
         ].join("\n");
-
-        conn.write(`$${response.length}\r\n${response}\r\n`);
+        return `$${response.length}\r\n${response}`;
       } else {
-        conn.write("$10\r\nrole:slave\r\n");
+        return "$10\r\nrole:slave";
       }
-    }//d
-    else if (cmd === "REPLCONF" && (cont[4] === "listening-port"|| cont[4] === "capa") )
-      {
-        console.log("yahan se");
-      conn.write("+OK\r\n");
-    }
-
-    else if (cmd === "PSYNC") {
+    } else if (cmd === "REPLCONF" && (commandArray[1] === "listening-port" || commandArray[1] === "capa")) {
+      console.log("yahan se");
+      return "+OK";
+    } else if (cmd === "PSYNC") {
       conn.write("+FULLRESYNC " + repliId + " " + offset + "\r\n");
       conn.write(Buffer.concat([rdbHead, rdbBuffer]));
       replicas.push(conn);
-    }
-
-    else if (cmd === "WAIT") {
-      console.log(length_of_propagated_commands);
-      const num = parseInt(cont[4]);
-      const timeout = parseInt(cont[6]);
-      const startTime = Date.now();
-      let countOfReplicas = 0;
-        if(length_of_propagated_commands==0){
-          conn.write(":"+replicas.length+"\r\n");
-        }
-        else
-        {
-      const acknowledgedReplicas = new Set();
-  
-      const checkTimeout = () => {
-          const elapsed = Date.now() - startTime;
-          if (countOfReplicas >= num || elapsed >= timeout) {
-                length_of_propagated_commands+="*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".length;
-              conn.write(`:${countOfReplicas}\r\n`);
-          } else {
-              setTimeout(checkTimeout, 10); // Check again after 10ms
-          }
-      };
-  
-      for (const replica of replicas) {
-          replica.write("*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n");
-  
-          replica.on('data', (data) => {
-              const inp1 = data.toString();
-              const cont1 = inp1.split("\r\n");
-              const num1 = parseInt(cont1[6]);
-              console.log("replica sent ",num1,"propagated_commands jo hamne bheja ",length_of_propagated_commands);
-  
-              if (num1 === length_of_propagated_commands) {
-                console.log("entered");
-                  if (!acknowledgedReplicas.has(replica)) {
-                      acknowledgedReplicas.add(replica);
-                      countOfReplicas++;
-                  }
-              }
-          });
+      return null; // Don't send additional response
+    } else if (cmd === "WAIT") {
+      // Handle WAIT command (complex logic remains the same)
+      handleWaitCommand(commandArray, conn);
+      return null;
+    } else if (cmd === "TYPE") {
+      const key = commandArray[1];
+      if (hashmap.has(key)) {
+        return `+${typeof(hashmap.get(key).value)}`;
+      } else if (streammap.has(key)) {
+        return "+stream";
+      } else {
+        return "+none";
       }
-  
+    } else if (cmd === "XADD") {
+      // Convert commandArray back to cont format for existing function
+      const cont = ["*" + commandArray.length, "", ...commandArray.map(cmd => [cmd.length.toString(), cmd]).flat()];
+      handleXADD(cont, conn);
+      return null;
+    } else if (cmd === "XRANGE") {
+      const cont = ["*" + commandArray.length, "", ...commandArray.map(cmd => [cmd.length.toString(), cmd]).flat()];
+      handleXRANGE(cont, conn);
+      return null;
+    } else if (cmd === "XREAD") {
+      const cont = ["*" + commandArray.length, "", ...commandArray.map(cmd => [cmd.length.toString(), cmd]).flat()];
+      if (commandArray[1] && commandArray[1].toUpperCase() === "BLOCK") {
+        handleXREADBLOCK(cont, conn);
+      } else {
+        handleXREAD(cont, conn);
+      }
+      return null;
+    } else if (cmd === "INCR") {
+      const key = commandArray[1];
+      if (hashmap.has(key)) {
+        let val = hashmap.get(key).value;
+        if (isNaN(val)) {
+          return "-ERR value is not an integer or out of range";
+        }
+        val = parseInt(val) + 1;
+        hashmap.set(key, { value: ("" + val), expireTime: hashmap.get(key).expireTime });
+        return `:${val}`;
+      } else {
+        hashmap.set(key, { value: "1", expireTime: null });
+        return ":1";
+      }
+    }
+    
+    return "-ERR unknown command";
+  }
+
+  // Helper function for WAIT command
+  function handleWaitCommand(commandArray, conn) {
+    console.log(length_of_propagated_commands);
+    const num = parseInt(commandArray[1]);
+    const timeout = parseInt(commandArray[2]);
+    const startTime = Date.now();
+    let countOfReplicas = 0;
+    
+    if (length_of_propagated_commands == 0) {
+      conn.write(":" + replicas.length + "\r\n");
+    } else {
+      const acknowledgedReplicas = new Set();
+
+      const checkTimeout = () => {
+        const elapsed = Date.now() - startTime;
+        if (countOfReplicas >= num || elapsed >= timeout) {
+          length_of_propagated_commands += "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".length;
+          conn.write(`:${countOfReplicas}\r\n`);
+        } else {
+          setTimeout(checkTimeout, 10);
+        }
+      };
+
+      for (const replica of replicas) {
+        replica.write("*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n");
+
+        replica.on('data', (data) => {
+          const inp1 = data.toString();
+          const cont1 = inp1.split("\r\n");
+          const num1 = parseInt(cont1[6]);
+          console.log("replica sent ", num1, "propagated_commands jo hamne bheja ", length_of_propagated_commands);
+
+          if (num1 === length_of_propagated_commands) {
+            console.log("entered");
+            if (!acknowledgedReplicas.has(replica)) {
+              acknowledgedReplicas.add(replica);
+              countOfReplicas++;
+            }
+          }
+        });
+      }
+
       checkTimeout();
     }
   }
-
-  else if(cmd==="TYPE")
-  {
-    var key=cont[4];
-    console.log(streammap.size);
-    console.log("All keys in streammap:", [...streammap.keys()], "Key:", key);
-
-    if(hashmap.has(key))
-    {
-      conn.write("+"+typeof(hashmap.get(key).value)+"\r\n");
-    }
-    else if(streammap.has(key))
-    {
-      conn.write("+stream\r\n");
-    }
-    else
-    {
-      conn.write("+none\r\n");
-    }
-  }
-
-  else if (cmd === "XADD") 
-    {
-     handleXADD(cont, conn);
-}
-
-else if (cmd === "XRANGE") 
-  {
-    handleXRANGE(cont, conn);
-  }
-  else if(cmd === "XREAD")
-  {
-     if(cont[4].toLocaleUpperCase() ==="BLOCK")
-     {
-       handleXREADBLOCK(cont, conn);
-     }
-     else
-     {
-       handleXREAD(cont, conn);
-     }
-  }
-  else if(cmd === "INCR")
-  {
-    var key=cont[4];
-    if(hashmap.has(key))
-    {//d
-      let val=hashmap.get(key).value;
-      if(isNaN(val))
-      {
-        conn.write("-ERR value is not an integer or out of range\r\n");
-      }
-      val=parseInt(val)+1;
-
-      hashmap.set(key,{value:(""+val),expireTime:hashmap.get(key).expireTime});
-      conn.write(":"+val+"\r\n");
-    }
-    else
-    {
-      hashmap.set(key,{value:"1",expireTime:null});
-      conn.write(":"+1+"\r\n");
-  }
-}
-
-
-
-  
-
-    });
-  conn.on("end", function () {
-    console.log("Client disconnected");
-  });
 });
-server.listen(PORT, "127.0.0.1");
+server.listen(PORT, "0.0.0.0");
 // Stream storage structure
 
 // Stream storage structure
