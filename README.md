@@ -53,7 +53,7 @@ A fully functional Redis server implementation built from scratch in Node.js, su
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/redis-server.git
+git clone https://github.com/Satvik7773/REDSYNC.git
 cd redis-server
 
 # Install dependencies
