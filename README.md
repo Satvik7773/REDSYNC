@@ -251,14 +251,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Redis team for the excellent documentation
 - Node.js community for the robust networking APIs
 - Contributors and testers
-
-## 📊 Project Stats
-
-![GitHub stars](https://img.shields.io/github/stars/yourusername/redis-server)
-![GitHub forks](https://img.shields.io/github/forks/yourusername/redis-server)
-![GitHub issues](https://img.shields.io/github/issues/yourusername/redis-server)
-![License](https://img.shields.io/github/license/yourusername/redis-server)
-
 ---
-
 **Built with ❤️ and Node.js and unempolyment **
